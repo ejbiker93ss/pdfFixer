@@ -78,7 +78,7 @@ namespace pdfFixer
                 PdfDocument pagePdf = new PdfDocument();
                 pagePdf.AddPage(page);
                 var dir = Path.GetDirectoryName(filepath);
-                var file = Guid.NewGuid().ToString() + ".pdf";
+                var file = "pdfFixer_temp_" + pagnum.ToString() + ".pdf";
                 var newPath = Path.Combine(dir, file);
                 pagePdf.Save(newPath);
 
@@ -114,7 +114,7 @@ namespace pdfFixer
 
                 var btn = new SimpleButton(); 
                 btn.Location = new Point(150, 476);
-                btn.Size = new System.Drawing.Size(80, 20);
+                btn.Size = new System.Drawing.Size(85, 22);
                 btn.Click += Btn_Click;
                 panel.Controls.Add(btn);
                 btn.Name = "btn";
@@ -175,10 +175,10 @@ namespace pdfFixer
             DragDropInfo fromdrop = (DragDropInfo)e.Data.GetData(typeof(DragDropInfo));
             var src = fromdrop.control as myPanel;
 
-            if (LeftPanel.Name == string.Empty)
-                return;
+            //if (LeftPanel.Name == string.Empty)
+            //    return;
 
-            var leftIndex = flp1.Controls.GetChildIndex(LeftPanel);
+            //var leftIndex = flp1.Controls.GetChildIndex(LeftPanel);
 
             if (index > -1)
                 flp1.Controls.SetChildIndex(src, index);
@@ -294,9 +294,8 @@ namespace pdfFixer
                 page.Rotate = myPDFviewer.RotationAngle;
                 outputDoc.AddPage(page);
 
-                RemoveNewFile(fp);
-
                 panel.Dispose();
+                RemoveNewFile(fp);
                 File.Delete(fp);
             }
             var dir = txtOutputFolderPath.Text + "\\";

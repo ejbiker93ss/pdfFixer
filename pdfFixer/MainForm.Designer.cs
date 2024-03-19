@@ -132,7 +132,7 @@
             this.cbDeleteOriginals.Properties.Appearance.Options.UseFont = true;
             this.cbDeleteOriginals.Properties.Caption = "Delete original files";
             this.cbDeleteOriginals.Properties.ImageOptions.SvgImageGrayed = ((DevExpress.Utils.Svg.SvgImage)(resources.GetObject("cbDeleteOriginals.Properties.ImageOptions.SvgImageGrayed")));
-            this.cbDeleteOriginals.Size = new System.Drawing.Size(182, 22);
+            this.cbDeleteOriginals.Size = new System.Drawing.Size(190, 22);
             this.cbDeleteOriginals.TabIndex = 7;
             // 
             // MainForm
