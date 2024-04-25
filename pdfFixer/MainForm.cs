@@ -21,6 +21,10 @@ using DevExpress.XtraEditors;
 using pdfFixer.Properties;
 using System.Resources;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using DevExpress.Utils.About;
+using System.Reflection;
+using PdfSharp.Drawing;
+using System.Diagnostics;
 
 namespace pdfFixer
 {
@@ -34,13 +38,13 @@ namespace pdfFixer
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            while(flp1.Controls.Count > 0)
+            while (flp1.Controls.Count > 0)
             {
                 Panel panel = (Panel)flp1.Controls[0];
                 panel.Dispose();
             }
 
-            foreach(var file in NewFiles)
+            foreach (var file in NewFiles)
             {
                 File.Delete(file);
             }
@@ -57,22 +61,111 @@ namespace pdfFixer
             if (files != null)
                 foreach (string file in files)
                 {
-                    if (!file.ToLower().EndsWith(".pdf"))
+                    string newPdf = null;
+                    if (file.ToLower().EndsWith(".jpg") || file.ToLower().EndsWith(".jpeg") || file.ToLower().EndsWith(".png"))
+                    {
+                        newPdf = Path.GetDirectoryName(file) + "\\" + Path.GetFileNameWithoutExtension(file) + ".pdf";
+                        GeneratePDF(newPdf, file);
+
+                    }
+
+                    if (!file.ToLower().EndsWith(".pdf") && newPdf == null)
                         continue;
 
                     OriginalFiles.Add(file);
-
-                    AddPDF(file.ToString(), sender as FlowLayoutPanel);
+                    var pdf = newPdf == null ? file.ToString() : newPdf;
+                    if (newPdf != null)
+                        OriginalFiles.Add(newPdf);
+                    AddPDF(pdf, sender as FlowLayoutPanel);
                 }
 
+            //Get data from MS Outlook
+            if (e.Data.GetDataPresent("FileGroupDescriptor"))
+            {
+                string[] frmts = e.Data.GetFormats();
+                object o = e.Data.GetData(frmts[0]);
+                //
+                // the first step here is to get the filename
+                // of the attachment and
+                // build a full-path name so we can store it
+                // in the temporary folder
+                //
+
+                // set up to obtain the FileGroupDescriptor
+                // and extract the file name
+                Stream theStream = (Stream)e.Data.GetData("FileGroupDescriptor");
+                byte[] fileGroupDescriptor = new byte[512];
+                theStream.Read(fileGroupDescriptor, 0, 512);
+                // used to build the filename from the FileGroupDescriptor block
+                StringBuilder fileName = new StringBuilder("");
+                // this trick gets the filename of the passed attached file
+                for (int i = 76; fileGroupDescriptor[i] != 0; i++)
+                    fileName.Append(Convert.ToChar(fileGroupDescriptor[i]));
+
+
+                string path = Path.GetTempPath();
+                // put the zip file into the temp directory
+                string theFile = path + fileName.ToString();
+                // create the full-path name
+
+                //
+                // Second step:  we have the file name.
+                // Now we need to get the actual raw
+                // data for the attached file and copy it to disk so we work on it.
+                //
+
+                // get the actual raw file into memory
+                MemoryStream ms = (MemoryStream)e.Data.GetData("FileContents", true);
+                if (ms == null)
+                {
+                    // ms = (MemoryStream)e.Data.GetData("innerData", true);
+                    FieldInfo info;
+                    object obj;
+
+                    info = e.Data.GetType().GetField("innerData", BindingFlags.NonPublic | BindingFlags.Instance);
+                    obj = info.GetValue(e.Data);
+
+                    info = obj.GetType().GetField("innerData", BindingFlags.NonPublic | BindingFlags.Instance);
+                    System.Windows.DataObject dataObj = info.GetValue(obj) as System.Windows.DataObject;
+                    //ms = dataObj.GetData("FileContents",true) as MemoryStream;
+
+                }
+
+                // allocate enough bytes to hold the raw data
+                byte[] fileBytes = new byte[ms.Length];
+                // set starting position at first byte and read in the raw data
+                ms.Position = 0;
+                ms.Read(fileBytes, 0, (int)ms.Length);
+                // create a file and save the raw zip file to it
+                FileStream fs = new FileStream(theFile, FileMode.Create);
+                fs.Write(fileBytes, 0, (int)fileBytes.Length);
+
+                fs.Close();  // close the file
+                theStream.Close();
+                FileInfo tempFile = new FileInfo(theFile);
+
+                string newPdf = null;
+                if (tempFile.FullName.ToLower().EndsWith(".jpg") || tempFile.FullName.ToLower().EndsWith(".jpeg") || tempFile.FullName.ToLower().EndsWith(".png"))
+                {
+                    newPdf = Path.GetDirectoryName(tempFile.FullName) + "\\" + Path.GetFileNameWithoutExtension(tempFile.FullName) + ".pdf";
+                    GeneratePDF(newPdf, tempFile.FullName);
+                    NewFiles.Add(tempFile.FullName);
+                    NewFiles.Add(newPdf);
+
+                }
+                string FinalFile = newPdf ?? tempFile.FullName;
+                AddPDF(FinalFile, sender as FlowLayoutPanel);
+
+            }
             AddPageNumbers();
         }
+        int pagnum { get; set; } = 1;
         private void AddPDF(string filepath, FlowLayoutPanel pnl)
         {
             PdfDocument pdf = new PdfDocument();
             pdf = PdfReader.Open(filepath, PdfDocumentOpenMode.Import);
             var pages = pdf.Pages;
-            var pagnum = 1;
+
             foreach (var page in pages)
             {
                 PdfDocument pagePdf = new PdfDocument();
@@ -112,14 +205,14 @@ namespace pdfFixer
                 pnl.Controls.Add(panel);
                 txtOutputFolderPath.Text = dir;
 
-                var btn = new SimpleButton(); 
+                var btn = new SimpleButton();
                 btn.Location = new Point(150, 476);
                 btn.Size = new System.Drawing.Size(85, 22);
                 btn.Click += Btn_Click;
                 panel.Controls.Add(btn);
                 btn.Name = "btn";
                 btn.Text = "Remove page";
-                
+
                 btn.BringToFront();
                 pagnum++;
             }
@@ -146,7 +239,7 @@ namespace pdfFixer
         private myPanel LeftPanel { get; set; } = new myPanel();
         private void Panel_MouseLeave(object sender, EventArgs e)
         {
-            
+
             LeftPanel = sender as myPanel;
         }
 
@@ -295,15 +388,23 @@ namespace pdfFixer
                 outputDoc.AddPage(page);
 
                 panel.Dispose();
-                RemoveNewFile(fp);
-                File.Delete(fp);
+
             }
             var dir = txtOutputFolderPath.Text + "\\";
             var filen = txtFileName.Text + ".pdf";
             outputDoc.Save(dir + filen);
 
+            DeleteNewFiles();
+
+
             if (cbDeleteOriginals.Checked)
                 DeleteOriginals();
+        }
+        private void DeleteNewFiles()
+        {
+            foreach (var file in NewFiles)
+                File.Delete(file);
+            NewFiles.Clear();
         }
         private void DeleteOriginals()
         {
@@ -334,7 +435,7 @@ namespace pdfFixer
                 pageLabel.BackColor = Color.Black;
                 pageLabel.Location = new System.Drawing.Point(150, 20);
                 pageLabel.Width = 500;
-                
+
                 mp.Controls.Add(pageLabel);
                 pageLabel.BringToFront();
                 pg++;
@@ -346,10 +447,34 @@ namespace pdfFixer
             var dialog = new CommonOpenFileDialog();
             dialog.IsFolderPicker = true;
 
-            if(dialog.ShowDialog() != CommonFileDialogResult.Ok)
+            if (dialog.ShowDialog() != CommonFileDialogResult.Ok)
                 return;
 
             txtOutputFolderPath.Text = dialog.FileName;
+        }
+        private void GeneratePDF(string filename, string imageLoc)
+        {
+            PdfDocument document = new PdfDocument();
+
+            // Create an empty page or load existing
+            PdfPage page = document.AddPage();
+
+            // Get an XGraphics object for drawing
+            XGraphics gfx = XGraphics.FromPdfPage(page);
+            DrawImage(gfx, imageLoc, 5, 5, (int)gfx.PageSize.Width - 5, (int)gfx.PageSize.Height - 5);
+
+
+            // Save and start View
+            document.Save(filename);
+            //Process.Start(filename);
+        }
+
+        void DrawImage(XGraphics gfx, string picFilePath, int x, int y, int width, int height)
+        {
+            XImage img = XImage.FromFile(picFilePath);
+
+            double xx = (250 - img.PixelWidth * 72 / img.HorizontalResolution) / 2;
+            gfx.DrawImage(img, x, y, width, height);
         }
     }
 }
