@@ -25,6 +25,7 @@ using DevExpress.Utils.About;
 using System.Reflection;
 using PdfSharp.Drawing;
 using System.Diagnostics;
+using System.Drawing.Imaging;
 
 namespace pdfFixer
 {
@@ -58,9 +59,13 @@ namespace pdfFixer
             var files = (string[])e.Data.GetData(DataFormats.FileDrop);
             var pdfviewer = e.Data.GetDataPresent(typeof(Panel));
 
+            // var f = ExtractFiles(data);
+
             if (files != null)
+            {
                 foreach (string file in files)
                 {
+
                     string newPdf = null;
                     if (file.ToLower().EndsWith(".jpg") || file.ToLower().EndsWith(".jpeg") || file.ToLower().EndsWith(".png"))
                     {
@@ -78,6 +83,9 @@ namespace pdfFixer
                         OriginalFiles.Add(newPdf);
                     AddPDF(pdf, sender as FlowLayoutPanel);
                 }
+                return;
+            }
+
 
             //Get data from MS Outlook
             if (e.Data.GetDataPresent("FileGroupDescriptor"))
@@ -129,7 +137,13 @@ namespace pdfFixer
                     System.Windows.DataObject dataObj = info.GetValue(obj) as System.Windows.DataObject;
                     //ms = dataObj.GetData("FileContents",true) as MemoryStream;
 
+                    var comDataObject = (System.Runtime.InteropServices.ComTypes.IDataObject)data;
+                    OutlookDataObject dataObject = new OutlookDataObject(new System.Windows.Forms.DataObject(data));
+                    MemoryStream[] fileStreams = (MemoryStream[])dataObject.GetData("FileContents");
+                    ms = fileStreams[0];
+
                 }
+
 
                 // allocate enough bytes to hold the raw data
                 byte[] fileBytes = new byte[ms.Length];
@@ -157,12 +171,145 @@ namespace pdfFixer
                 AddPDF(FinalFile, sender as FlowLayoutPanel);
 
             }
+            else if (data.GetDataPresent(DataFormats.EnhancedMetafile))
+            {
+                Metafile meta = GetMetafile(data);
+                System.Drawing.Image image = meta;
+                string newPdf = null;
+                using (var ms = new MemoryStream())
+                {
+                    image.Save(ms, ImageFormat.Jpeg);
+                    var copy = image;
+                    var rand = new Random();
+                    var tempImageName = "\\tempImage" + rand.Next(1000, 5000).ToString() + ".jpeg";
+                    var newPdfName = "\\pdfFixerTemp" + rand.Next(1000, 5000).ToString() + ".pdf";
+                    var tempPath = Path.GetTempPath();
+
+                    copy.Save(Path.GetTempPath() + tempImageName, ImageFormat.Jpeg);
+                    GeneratePDF(Path.GetTempPath() + newPdfName, Path.GetTempPath() + tempImageName);
+                    NewFiles.Add(Path.GetTempPath() + newPdfName);
+                    NewFiles.Add(Path.GetTempPath() + tempImageName);
+
+                    AddPDF(Path.GetTempPath() + newPdfName, sender as FlowLayoutPanel);
+                }
+            }
+            else if (e.Data.GetDataPresent("FileContents"))
+            {
+                using (var stream = data.GetData("FileGroupDescriptor") as MemoryStream)
+                {
+                    if (stream != null)
+                    {
+                        var fileGroupDescriptor = new byte[stream.Length];
+                        stream.Read(fileGroupDescriptor, 0, (int)stream.Length);
+                        int numFiles = fileGroupDescriptor[0];
+                        // used to build the filename from the FileGroupDescriptor block
+                        // this trick gets the filename of the passed attached file
+                        var pos = 0;
+                        for (int fileNum = 0; fileNum < numFiles; fileNum++)
+                        {
+                            var fn = new StringBuilder("");
+                            var startPos = (fileNum * 332) + 76;
+                            for (int i = startPos; fileGroupDescriptor[i] != 0; i++)
+                            {
+                                fn.Append(Convert.ToChar(fileGroupDescriptor[i]));
+                                pos = i;
+                            }
+                            //fileNames.Add(fn.ToString());
+                        }
+                        stream.Close();
+                    }
+                }
+                //get multiple files contents
+                var comDataObject = (System.Runtime.InteropServices.ComTypes.IDataObject)data;
+                OutlookDataObject dataObject = new OutlookDataObject(new System.Windows.Forms.DataObject(data));
+                MemoryStream[] fileStreams = (MemoryStream[])dataObject.GetData("FileContents");
+                for (int i = 0; i < fileStreams.Length; i++)
+                {
+                    using (var ms = fileStreams[i])
+                    {
+                        var contents = new byte[ms.Length];
+                        ms.Read(contents, 0, (int)ms.Length);
+                        ms.Close();
+
+                        // allocate enough bytes to hold the raw data
+                        byte[] fileBytes = new byte[ms.Length];
+                        // set starting position at first byte and read in the raw data
+                        ms.Position = 0;
+                        ms.Read(fileBytes, 0, (int)ms.Length);
+
+                        // set up to obtain the FileGroupDescriptor
+                        // and extract the file name
+                        Stream theStream = (Stream)e.Data.GetData("FileGroupDescriptor");
+                        byte[] fileGroupDescriptor = new byte[512];
+                        theStream.Read(fileGroupDescriptor, 0, 512);
+
+                        // used to build the filename from the FileGroupDescriptor block
+                        StringBuilder fileName = new StringBuilder("");
+                        // this trick gets the filename of the passed attached file
+
+                        for (int j = 76; fileGroupDescriptor[j] != 0; j++)
+                            fileName.Append(Convert.ToChar(fileGroupDescriptor[j]));
+
+                        string path = Path.GetTempPath();
+                        // put the zip file into the temp directory
+                        string theFile = path + fileName.ToString();
+                        // create a file and save the raw zip file to it
+                        FileStream fs = new FileStream(theFile, FileMode.Create);
+                        fs.Write(fileBytes, 0, (int)fileBytes.Length);
+
+                        fs.Close();  // close the file
+                        theStream.Close();
+                        FileInfo tempFile = new FileInfo(theFile);
+
+                        string newPdf = null;
+                        if (tempFile.FullName.ToLower().EndsWith(".jpg") || tempFile.FullName.ToLower().EndsWith(".jpeg") || tempFile.FullName.ToLower().EndsWith(".png"))
+                        {
+                            newPdf = Path.GetDirectoryName(tempFile.FullName) + "\\" + Path.GetFileNameWithoutExtension(tempFile.FullName) + ".pdf";
+                            GeneratePDF(newPdf, tempFile.FullName);
+                            NewFiles.Add(tempFile.FullName);
+                            NewFiles.Add(newPdf);
+
+                        }
+                        string FinalFile = newPdf ?? tempFile.FullName;
+                        AddPDF(FinalFile, sender as FlowLayoutPanel);
+                    }
+                }
+            }
             AddPageNumbers();
+        }
+        static Metafile GetMetafile(System.Windows.Forms.IDataObject obj)
+        {
+            var iobj = (System.Runtime.InteropServices.ComTypes.IDataObject)obj;
+            var etc = iobj.EnumFormatEtc(System.Runtime.InteropServices.ComTypes.DATADIR.DATADIR_GET);
+            var pceltFetched = new int[1];
+            var fmtetc = new System.Runtime.InteropServices.ComTypes.FORMATETC[1];
+            while (0 == etc.Next(1, fmtetc, pceltFetched) && pceltFetched[0] == 1)
+            {
+                var et = fmtetc[0];
+                var fmt = DataFormats.GetFormat(et.cfFormat);
+                if (fmt.Name != "EnhancedMetafile")
+                {
+                    continue;
+                }
+                System.Runtime.InteropServices.ComTypes.STGMEDIUM medium;
+                iobj.GetData(ref et, out medium);
+                return new Metafile(medium.unionmember, true);
+            }
+            return null;
         }
         int pagnum { get; set; } = 1;
         private void AddPDF(string filepath, FlowLayoutPanel pnl)
         {
             PdfDocument pdf = new PdfDocument();
+            var filenWOext = Path.GetFileNameWithoutExtension(filepath);
+            if (filenWOext.Contains("."))
+            {
+                filenWOext = filenWOext.Replace(".", "");
+                var p = Path.GetDirectoryName(filepath);
+                var newFP = p + "\\" + filenWOext + ".pdf";
+                File.Move(filepath, newFP);
+                filepath = newFP;
+            }
             pdf = PdfReader.Open(filepath, PdfDocumentOpenMode.Import);
             var pages = pdf.Pages;
 
@@ -475,6 +622,90 @@ namespace pdfFixer
 
             double xx = (250 - img.PixelWidth * 72 / img.HorizontalResolution) / 2;
             gfx.DrawImage(img, x, y, width, height);
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+        public List<ScanDocument> ExtractFiles(IDataObject data)
+        {
+            var files = new List<ScanDocument>();
+            try
+            {
+                if (data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    string[] filesNames = data.GetData(DataFormats.FileDrop) as string[];
+                    if (filesNames != null && filesNames.Length > 0)
+                    {
+                        foreach (var filePath in filesNames)
+                        {
+                            files.Add(new ScanDocument()
+                            {
+                                FileName = Path.GetFileName(filePath),
+                                Contents = File.ReadAllBytes(filePath)
+                            });
+                        }
+                    }
+                }
+                else if (data.GetDataPresent("FileContents"))
+                {
+                    //handle file dropped from outlook
+                    //get the file names
+                    List<string> fileNames = new List<string>();
+                    using (var stream = data.GetData("FileGroupDescriptor") as MemoryStream)
+                    {
+                        var fileGroupDescriptor = new byte[stream.Length];
+                        stream.Read(fileGroupDescriptor, 0, (int)stream.Length);
+                        int numFiles = fileGroupDescriptor[0];
+                        // used to build the filename from the FileGroupDescriptor block
+                        // this trick gets the filename of the passed attached file
+                        var pos = 0;
+                        for (int fileNum = 0; fileNum < numFiles; fileNum++)
+                        {
+                            var fn = new StringBuilder("");
+                            var startPos = (fileNum * 332) + 76;
+                            for (int i = startPos; fileGroupDescriptor[i] != 0; i++)
+                            {
+                                fn.Append(Convert.ToChar(fileGroupDescriptor[i]));
+                                pos = i;
+                            }
+                            fileNames.Add(fn.ToString());
+                        }
+                        stream.Close();
+                    }
+                    //get multiple files contents
+                    var comDataObject = (System.Runtime.InteropServices.ComTypes.IDataObject)data;
+                    OutlookDataObject dataObject = new OutlookDataObject(new System.Windows.Forms.DataObject(data));
+                    MemoryStream[] fileStreams = (MemoryStream[])dataObject.GetData("FileContents");
+                    for (int i = 0; i < fileStreams.Length; i++)
+                    {
+                        using (var ms = fileStreams[i])
+                        {
+                            var contents = new byte[ms.Length];
+                            ms.Read(contents, 0, (int)ms.Length);
+                            ms.Close();
+                            files.Add(new ScanDocument()
+                            {
+                                FileName = fileNames[i],
+                                Contents = contents
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+            return files;
         }
     }
 }
