@@ -1,31 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using DevExpress.XtraPdfViewer.Forms;
+﻿using DevExpress.XtraEditors;
 using DevExpress.XtraPdfViewer;
-using PdfSharp;
-using PdfSharp.Pdf;
-using PdfSharp.Forms;
-using System.IO;
-using PdfSharp.Pdf.IO;
-using System.Runtime.CompilerServices;
-using DevExpress.XtraBars.Controls;
-using DevExpress.Emf;
-using DevExpress.XtraEditors;
-using pdfFixer.Properties;
-using System.Resources;
 using Microsoft.WindowsAPICodePack.Dialogs;
-using DevExpress.Utils.About;
-using System.Reflection;
 using PdfSharp.Drawing;
-using System.Diagnostics;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
+using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Windows.Forms;
 
 namespace pdfFixer
 {
@@ -531,7 +517,8 @@ namespace pdfFixer
                 PdfDocument input = PdfReader.Open(fp, PdfDocumentOpenMode.Import);
                 PdfPage page = input.Pages[0];
 
-                page.Rotate = myPDFviewer.RotationAngle;
+                var rotate = page.Rotate;
+                page.Rotate = myPDFviewer.RotationAngle - rotate;
                 outputDoc.AddPage(page);
 
                 panel.Dispose();
@@ -603,13 +590,12 @@ namespace pdfFixer
         {
             PdfDocument document = new PdfDocument();
 
-            // Create an empty page or load existing
+            //Create an empty page or load existing
             PdfPage page = document.AddPage();
 
             // Get an XGraphics object for drawing
             XGraphics gfx = XGraphics.FromPdfPage(page);
             DrawImage(gfx, imageLoc, 5, 5, (int)gfx.PageSize.Width - 5, (int)gfx.PageSize.Height - 5);
-
 
             // Save and start View
             document.Save(filename);
